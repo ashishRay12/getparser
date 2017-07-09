@@ -2,8 +2,10 @@ from twisted.internet import reactor, protocol, endpoints
 from io import StringIO
 import re
 import six
-from getparser import HTTP_METHODS, METHODS_MAP
-from getparser.routing import map_route, get_route
+from __init__ import HTTP_METHODS, METHODS_MAP
+from routing import map_route, get_route
+from request import Request
+from response import Response
 
 
 class App:
@@ -35,12 +37,13 @@ class App:
 def route_req(data, transport):
     request_obj = Request(data)
     response_obj = Response(transport)
-    resource = get_route(data['path'])
-    method = data['method']
+
     try:
+        resource = get_route(data['path'])
+        method = data['method']
         resource_method = getattr(resource, METHODS_MAP[method])
         resource_method(req=request_obj, resp=response_obj)
-    except AttributeError:
+    except (AttributeError, KeyError):
         transport.write(b"HTTP/1.1 404 Not Found\r\n")
         transport.loseConnection()
 
@@ -54,7 +57,8 @@ class MyWebs(protocol.Protocol):
         print("connectionMade")
 
     def dataReceived(self, data):
-        # data = StringIO(data.decode("utf-8"), newline='\n')
+
+        # self.sendResponse()
         data = data.decode("utf-8")
         data = data.split('\r\n', 1)
         self.parseData(data)
@@ -67,8 +71,8 @@ class MyWebs(protocol.Protocol):
 
             data_dict.update(self.parseMethod(first_header_line))
             data_dict.update(self.parseHeader(data[1]))
-
-            self.sendResponse()
+            route_req(data_dict, self.transport)
+            # self.sendResponse()
         else:
             self.transport.write(b"HTTP/1.1 404 Not Found\r\n")
             self.transport.loseConnection()
@@ -80,30 +84,26 @@ class MyWebs(protocol.Protocol):
         method_dict['method'] = line_list[0]
         full_path_list = line_list[1].split('?')
         method_dict['path'] = full_path_list[0]
-        query_parm_list = self.factory.query_pattern.findall(full_path_list[1])
-        query_params = {}
-        for key_val in query_parm_list:
-            if key_val[0] in query_params:
-                query_params[key_val[0]].append(key_val[1])
-            else:
-                query_params[key_val] = []
-        method_dict['query_params'] = query_params
+        try:
+            query_parm_list = self.factory.query_pattern.findall(full_path_list[1])
+            query_params = {}
+            for key_val in query_parm_list:
+                if key_val[0] in query_params:
+                    query_params[key_val[0]].append(key_val[1])
+                else:
+                    query_params[key_val] = []
+            method_dict['query_params'] = query_params
+        except IndexError:
+            # if there is no query paramete
+            method_dict['query_params'] = {}
         return method_dict
 
     def parseHeader(self, data):
 
         raw_headers = data.split('\r\n\r\n', 1)[0]
         headers_dict = {}
-        headers_dict[headers] = dict(self.factory.headers_pattern.findall(raw_headers))
+        headers_dict['headers'] = dict(self.factory.headers_pattern.findall(raw_headers))
         return headers_dict
-
-    def sendResponse(self):
-        self.transport.write(b"HTTP/1.1 200 OK\r\n")
-        self.transport.write(b"Content-Type: text/html; charset=utf-8\r\n")
-        self.transport.write(b"\n")
-        responseBody = b"<html><body><h1>You said: bla bla</h1></body></html>"
-        self.transport.write(responseBody)
-        self.transport.loseConnection()
 
 
 class WebsFactory(protocol.ServerFactory):
@@ -114,10 +114,3 @@ class WebsFactory(protocol.ServerFactory):
     def buildProtocol(self, addr):
         print(addr)
         return MyWebs(self)
-
-app = App()
-app.run_server()
-
-# websEndpoint = endpoints.serverFromString(reactor, "tcp:8080")
-# websEndpoint.listen(WebsFactory())
-# reactor.run()
