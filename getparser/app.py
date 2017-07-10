@@ -2,10 +2,10 @@ from twisted.internet import reactor, protocol, endpoints
 from io import StringIO
 import re
 import six
-from __init__ import HTTP_METHODS, METHODS_MAP
-from routing import map_route, get_route
-from request import Request
-from response import Response
+from getparser import HTTP_METHODS, METHODS_MAP
+from getparser.routing import map_route, get_route
+from getparser.request import Request
+from getparser.response import Response
 
 
 class App:
@@ -25,12 +25,9 @@ class App:
 
         map_route(uri_template, resource)
 
-    def route_req(self, data):
-        pass
-
-    def run_server(self):
-        websEndpoint = endpoints.serverFromString(reactor, "tcp:8080")
-        websEndpoint.listen(WebsFactory())
+    def run_server(self, host, port):
+        websEndpoint = endpoints.TCP4ServerEndpoint(reactor, interface=host, port=port)
+        websEndpoint.listen(self.factory)
         reactor.run()
 
 
@@ -52,9 +49,6 @@ class MyWebs(protocol.Protocol):
 
     def __init__(self, factory):
         self.factory = factory
-
-    def connectionMade(self):
-        print("connectionMade")
 
     def dataReceived(self, data):
 
